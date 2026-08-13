@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WTC Labour Rates</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span>WORK<span class="plus">+</span>TRAVEL</span><span class="co">CO.</span></div>
+  <div class="topbar-right">
+    <span id="whoami"></span>
+    <button class="link" id="changePwBtn">Change password</button>
+    <button class="link" id="logoutBtn">Log out</button>
+  </div>
+</header>
+
+<main>
+  <div id="mustChangeNotice"></div>
+
+  <div class="card">
+    <h2>New rate calculation <span class="muted">— award, classification &amp; roster</span></h2>
+
+    <div class="row">
+      <div class="field">
+        <label for="clientName">Employer / client name</label>
+        <input type="text" id="clientName" placeholder="e.g. Acme Hospitality Pty Ltd">
+      </div>
+      <div class="field">
+        <label for="roleTitle">Role title (optional)</label>
+        <input type="text" id="roleTitle" placeholder="e.g. Kitchen hand">
+      </div>
+    </div>
+
+    <div class="field autocomplete">
+      <label for="awardSearch">Award</label>
+      <input type="text" id="awardSearch" placeholder="Search by award name or code…" autocomplete="off">
+      <div id="awardList" class="autocomplete-list" hidden></div>
+    </div>
+
+    <div id="awardInfo"></div>
+
+    <div id="classificationSection" hidden>
+      <div class="row">
+        <div class="field">
+          <label for="rateTypeSelect">Employment category</label>
+          <select id="rateTypeSelect"></select>
+        </div>
+        <div class="field">
+          <label for="classificationSelect">Classification</label>
+          <select id="classificationSelect"></select>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field" style="flex: 0 0 160px">
+          <label><input type="checkbox" id="isCasual" checked> Casual placement</label>
+        </div>
+        <div class="field" style="flex: 0 0 180px">
+          <label for="casualLoadingPct">Casual loading %</label>
+          <input type="number" id="casualLoadingPct" step="0.01">
+        </div>
+        <div class="field" style="flex: 0 0 200px">
+          <label for="oncostPct">On-costs % (super/payroll tax/WorkCover)</label>
+          <input type="number" id="oncostPct" step="0.01" value="22.7" min="22.7">
+        </div>
+        <div class="field" style="flex: 0 0 160px">
+          <label for="marginPct">Margin %</label>
+          <input type="number" id="marginPct" step="0.01" value="15">
+        </div>
+      </div>
+
+      <div id="rosterSection"></div>
+
+      <div class="field mt-8">
+        <label for="notes">Notes (optional)</label>
+        <textarea id="notes" rows="2"></textarea>
+      </div>
+
+      <div class="row" style="align-items:flex-end">
+        <button id="calcBtn" class="primary">Calculate</button>
+        <button id="saveBtn" disabled>Save quote</button>
+      </div>
+
+      <div id="breakdown"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Quote history</h2>
+    <div id="history"></div>
+  </div>
+
+  <div class="card" id="adminCard" hidden>
+    <h2>Staff accounts <span class="muted">— admin only</span></h2>
+    <div id="accountsList"></div>
+    <h3 class="small mt-8" style="margin-bottom:8px">Add staff member</h3>
+    <div class="row">
+      <div class="field"><label for="newEmail">Email</label><input type="text" id="newEmail"></div>
+      <div class="field"><label for="newName">Name</label><input type="text" id="newName"></div>
+      <div class="field" style="flex:0 0 140px">
+        <label for="newRole">Role</label>
+        <select id="newRole"><option value="staff">Staff</option><option value="admin">Admin</option></select>
+      </div>
+    </div>
+    <button id="addAccountBtn">Add account</button>
+    <div id="newAccountResult" class="mt-8"></div>
+  </div>
+</main>
+
+<div id="pwModalWrap" class="modal-wrap" hidden>
+  <div class="card" style="width:340px">
+    <h2 style="margin-bottom:14px">Set a new password</h2>
+    <div class="field"><label for="newPw">New password (min 8 characters)</label><input type="password" id="newPw"></div>
+    <div id="pwErr"></div>
+    <button class="primary" id="pwSubmit" style="width:100%">Update password</button>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in — WTC Labour Rates</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-box">
+    <div class="brand"><span>WORK<span class="plus">+</span>TRAVEL</span><span class="co">CO.</span></div>
+    <div class="card">
+      <h2 class="mt-8" style="margin-bottom:16px">Labour rate calculator</h2>
+      <div id="err"></div>
+      <form id="loginForm">
+        <div class="field">
+          <label for="email">Email</label>
+          <input type="email" id="email" required autocomplete="username">
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" required autocomplete="current-password">
+        </div>
+        <button type="submit" class="primary" style="width:100%">Sign in</button>
+      </form>
+    </div>
+  </div>
+</div>
+<script>
+  const form = document.getElementById("loginForm");
+  const err = document.getElementById("err");
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    err.innerHTML = "";
+    const email = document.getElementById("email").value;
+    const password = document.getElementById("password").value;
+    const res = await fetch("/api/staff/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      err.innerHTML = `<div class="notice error">${body.error || "Sign-in failed"}</div>`;
+      return;
+    }
+    location.href = "/app.html";
+  });
+</script>
+</body>
+</html>

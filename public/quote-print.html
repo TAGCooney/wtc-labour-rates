@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quote — WTC Labour Rates</title>
+<style>
+  :root { --pink: #ec3b73; }
+  * { box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; color: #1a1a1a; max-width: 720px; margin: 40px auto; padding: 0 20px; }
+  header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #1a1a1a; padding-bottom: 14px; margin-bottom: 20px; }
+  .brand { font-weight: 800; font-size: 1.3rem; text-transform: uppercase; letter-spacing: 0.02em; }
+  .brand .plus, .brand .co { color: var(--pink); }
+  h1 { font-size: 1.1rem; margin: 0 0 4px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.88rem; margin-bottom: 18px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #ddd; }
+  th { color: #555; font-size: 0.75rem; text-transform: uppercase; }
+  td.num, th.num { text-align: right; }
+  .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; margin-bottom: 20px; font-size: 0.9rem; }
+  .meta-grid .k { color: #666; }
+  .totals { display: flex; gap: 28px; margin: 18px 0; }
+  .totals .box { }
+  .totals .box .label { font-size: 0.75rem; color: #666; display: block; }
+  .totals .box .value { font-size: 1.3rem; font-weight: 800; }
+  .charge { color: var(--pink); }
+  footer { margin-top: 30px; font-size: 0.75rem; color: #777; border-top: 1px solid #ddd; padding-top: 10px; }
+  .no-print { margin-bottom: 20px; }
+  @media print { .no-print { display: none; } }
+</style>
+</head>
+<body>
+  <div class="no-print"><button onclick="window.print()">Print / Save as PDF</button></div>
+  <header>
+    <div class="brand">WORK<span class="plus">+</span>TRAVEL <span class="co">CO.</span></div>
+    <div style="text-align:right">
+      <div id="dateOut" class="small"></div>
+    </div>
+  </header>
+  <h1>Indicative labour hire rate</h1>
+  <div id="content">Loading…</div>
+  <footer>
+    Indicative rate build-up only, calculated from the Fair Work Modern Award rates in force at the time of calculation.
+    The applicable award is the controlling legal instrument — confirm classification and conditions against the award
+    (and any enterprise agreement or labour-hire licensing requirement) before engagement. Casual loading is sourced
+    from the award's own casual employment clause; confirm before finalising if the roster includes significant
+    overtime or weekend work.
+  </footer>
+
+<script>
+  const id = new URLSearchParams(location.search).get("id");
+  const money = (n) => `$${Number(n).toFixed(2)}`;
+
+  fetch(`/api/staff/quotes/${id}`).then(async (res) => {
+    if (res.status === 401) { location.href = "/login.html"; return; }
+    if (!res.ok) { document.getElementById("content").textContent = "Quote not found."; return; }
+    const q = await res.json();
+    document.getElementById("dateOut").textContent = new Date(q.created_at + "Z").toLocaleString();
+    document.getElementById("content").innerHTML = `
+      <div class="meta-grid">
+        <div><span class="k">Employer / client:</span> ${q.client_name}</div>
+        <div><span class="k">Role:</span> ${q.role_title || "—"}</div>
+        <div><span class="k">Award:</span> ${q.award_name} (${q.award_code})</div>
+        <div><span class="k">Classification:</span> ${q.classification_name}</div>
+        <div><span class="k">Employment type:</span> ${q.employee_rate_type_code}${q.is_casual ? " (casual)" : ""}</div>
+        <div><span class="k">Casual rate source:</span> ${
+          q.casual_rate_source === "award_table"
+            ? "award's own official casual pay table"
+            : q.casual_rate_source === "loading_fallback"
+            ? `permanent rates + ${q.casual_loading_pct}% fallback loading`
+            : "n/a"
+        }</div>
+        <div><span class="k">Prepared by:</span> ${q.staff_name}</div>
+      </div>
+      <table>
+        <thead><tr><th>Pay category</th><th class="num">Hours</th><th class="num">Rate ($/hr)</th><th class="num">Line total</th></tr></thead>
+        <tbody>
+          ${q.roster.map((l) => `<tr><td>${l.penaltyDescription}</td><td class="num">${l.hours}</td><td class="num">${money(l.loadedRate)}</td><td class="num">${money(l.lineTotal)}</td></tr>`).join("")}
+        </tbody>
+      </table>
+      <div class="totals">
+        <div class="box"><span class="label">Blended award rate</span><span class="value">${money(q.blended_award_rate)}/hr</span></div>
+        <div class="box"><span class="label">Cost rate (+${q.oncost_pct}% on-costs)</span><span class="value">${money(q.cost_rate)}/hr</span></div>
+        <div class="box"><span class="label">Charge rate (+${q.margin_pct}% margin)</span><span class="value charge">${money(q.charge_rate)}/hr</span></div>
+      </div>
+      ${q.notes ? `<p><strong>Notes:</strong> ${q.notes}</p>` : ""}
+    `;
+  });
+</script>
+</body>
+</html>
