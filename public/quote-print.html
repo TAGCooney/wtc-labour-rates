@@ -54,6 +54,8 @@
     if (res.status === 401) { location.href = "/login.html"; return; }
     if (!res.ok) { document.getElementById("content").textContent = "Quote not found."; return; }
     const q = await res.json();
+    const dateStr = new Date(q.created_at + "Z").toISOString().slice(0, 10);
+    document.title = `WTC Quote - ${q.client_name} - ${dateStr} - ${q.id}`;
     document.getElementById("dateOut").textContent = new Date(q.created_at + "Z").toLocaleString();
     document.getElementById("content").innerHTML = `
       <div class="meta-grid">
