@@ -386,7 +386,10 @@ async function loadAccounts() {
             ${a.active && a.pendingInvite ? '<span class="pill uncertain">setup link pending</span>' : ""}
             ${a.active && !a.pendingInvite && a.mustChange ? '<span class="pill uncertain">pending first login</span>' : ""}
           </td>
-          <td>${canToggle(a) ? `<button type="button" class="link toggle-active-btn" data-id="${a.id}" data-active="${a.active ? 1 : 0}">${a.active ? "Deactivate" : "Reactivate"}</button>` : ""}</td>
+          <td>
+            ${canToggle(a) ? `<button type="button" class="link toggle-active-btn" data-id="${a.id}" data-active="${a.active ? 1 : 0}">${a.active ? "Deactivate" : "Reactivate"}</button>` : ""}
+            ${canToggle(a) ? ` <button type="button" class="link resend-invite-btn" data-id="${a.id}" data-name="${a.name}">Resend setup link</button>` : ""}
+          </td>
         </tr>`
       ).join("")}
     </tbody>
@@ -394,6 +397,35 @@ async function loadAccounts() {
   document.querySelectorAll(".toggle-active-btn").forEach((btn) => {
     btn.addEventListener("click", () => toggleAccountActive(btn.dataset.id, btn.dataset.active === "1"));
   });
+  document.querySelectorAll(".resend-invite-btn").forEach((btn) => {
+    btn.addEventListener("click", () => resendInvite(btn.dataset.id, btn.dataset.name));
+  });
+}
+
+async function resendInvite(id, name) {
+  try {
+    const account = await api(`/api/staff/accounts/${id}/resend-invite`, { method: "POST" });
+    const subject = encodeURIComponent("Set up your WTC Labour Rates account");
+    const body = encodeURIComponent(
+      `Hi ${name},\n\nHere's a new setup link for your WTC Labour Rates account. Click this link to set your password and sign in:\n\n${account.inviteLink}\n\nThis link expires in 7 days.`
+    );
+    const mailtoLink = `mailto:${account.email}?subject=${subject}&body=${body}`;
+    $("newAccountResult").innerHTML = `
+      <div class="notice">
+        New setup link for ${name} (expires in 7 days, shown once):<br>
+        <input type="text" readonly value="${account.inviteLink}" style="margin:6px 0" onclick="this.select()">
+        <div class="row" style="gap:8px; margin-top:4px">
+          <button type="button" id="copyResendBtn">Copy link</button>
+          <a href="${mailtoLink}"><button type="button">Email via your mail client</button></a>
+        </div>
+      </div>`;
+    document.getElementById("copyResendBtn").addEventListener("click", () => {
+      navigator.clipboard.writeText(account.inviteLink);
+    });
+    loadAccounts();
+  } catch (e) {
+    $("newAccountResult").innerHTML = `<div class="notice error">${e.message}</div>`;
+  }
 }
 
 async function toggleAccountActive(id, currentlyActive) {

@@ -66,11 +66,11 @@ export async function handleStaffAuth(request, env, url) {
     if (body.password.length < 8) return error("Password must be at least 8 characters");
     const tokenHash = await hashInviteToken(body.token);
     const row = await env.DB.prepare(
-      "SELECT * FROM staff_users WHERE invite_token_hash = ? AND invite_expires_at > datetime('now')"
+      "SELECT * FROM staff_users WHERE invite_token_hash = ? AND invite_expires_at > datetime('now') AND active = 1"
     )
       .bind(tokenHash)
       .first();
-    if (!row) return error("This setup link is invalid or has expired -- ask an admin to send a new one", 404);
+    if (!row) return error("This setup link is invalid, expired, or the account isn't active -- ask an admin to send a new one", 404);
     const { salt, hash, iter } = await hashPassword(body.password);
     const updated = await env.DB.prepare(
       `UPDATE staff_users SET pw_salt=?, pw_hash=?, pw_iter=?, must_change=0, invite_token_hash=NULL, invite_expires_at=NULL
@@ -130,7 +130,26 @@ export async function handleStaffAuth(request, env, url) {
     return json({ ...staffRow(row), inviteLink }, 201);
   }
 
-  let m = match("/api/staff/accounts/:id", pathname);
+  let m = match("/api/staff/accounts/:id/resend-invite", pathname);
+  if (m && method === "POST") {
+    if (!requireRole(session, ["admin", "owner"])) return error("Forbidden", 403);
+    const target = await env.DB.prepare("SELECT * FROM staff_users WHERE id = ?").bind(m.id).first();
+    if (!target) return error("Not found", 404);
+    if (target.role === "owner") return error("Owner accounts can't be modified here", 403);
+    if (session.role === "admin" && target.role !== "staff") {
+      return error("Admins can only resend setup links for staff-level accounts", 403);
+    }
+    const { token, hash: inviteHash, expiresAt } = await createInviteToken();
+    const row = await env.DB.prepare(
+      "UPDATE staff_users SET invite_token_hash=?, invite_expires_at=?, must_change=1 WHERE id=? RETURNING *"
+    )
+      .bind(inviteHash, expiresAt, m.id)
+      .first();
+    const inviteLink = `${url.origin}/setup.html?token=${token}`;
+    return json({ ...staffRow(row), inviteLink });
+  }
+
+  m = match("/api/staff/accounts/:id", pathname);
   if (m && method === "PATCH") {
     if (!requireRole(session, ["admin", "owner"])) return error("Forbidden", 403);
     const target = await env.DB.prepare("SELECT * FROM staff_users WHERE id = ?").bind(m.id).first();
