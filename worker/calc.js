@@ -40,6 +40,30 @@ export function blendAwardRate(roster, rateRows) {
   return { lines, totalHours, totalPay, blendedAwardRate: totalPay / totalHours };
 }
 
+// selections: [{ allowance, quantity }], allowanceRows: this award's full
+// allowance list (from getAllowanceRows) -- matched by exact allowance name so
+// the dollar amount always comes from our data, never trusted from the client.
+// The extra dollars are folded into totalPay (and so into blendedAwardRate)
+// WITHOUT adding to totalHours, since these aren't extra hours worked -- this
+// spreads the flat allowance evenly across the rostered hours, which is the
+// right way to fold a flat $ amount into a $/hr charge rate.
+export function applyAllowances(selections, allowanceRows, totalPay, totalHours) {
+  const rowByName = new Map(allowanceRows.map((r) => [r.allowance, r]));
+  const lines = [];
+  let allowanceTotal = 0;
+  for (const sel of selections || []) {
+    const qty = Number(sel.quantity) || 0;
+    if (qty <= 0) continue;
+    const row = rowByName.get(sel.allowance);
+    if (row == null) throw new Error(`Unknown allowance "${sel.allowance}" for this award`);
+    const lineTotal = row.allowance_amount * qty;
+    allowanceTotal += lineTotal;
+    lines.push({ allowance: sel.allowance, quantity: qty, amount: row.allowance_amount, unit: row.payment_frequency, lineTotal });
+  }
+  const newTotalPay = totalPay + allowanceTotal;
+  return { lines, allowanceTotal, totalPay: newTotalPay, blendedAwardRate: totalHours > 0 ? newTotalPay / totalHours : 0 };
+}
+
 export function applyOncostAndMargin(blendedAwardRate, oncostPct, marginPct, oncostFloorPct) {
   if (oncostPct < oncostFloorPct) {
     throw new Error(`On-cost % cannot be below the ${oncostFloorPct}% floor (super + payroll tax + WorkCover)`);

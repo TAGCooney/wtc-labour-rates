@@ -80,6 +80,14 @@
           ${q.roster.map((l) => `<tr><td>${l.penaltyDescription}${l.isOvertime ? ' <span class="ot-badge">OT</span>' : ""}</td><td class="num">${l.hours}</td><td class="num">${money(l.loadedRate)}</td><td class="num">${money(l.lineTotal)}</td></tr>`).join("")}
         </tbody>
       </table>
+      ${
+        q.allowances && q.allowances.length
+          ? `<table>
+              <thead><tr><th>Allowance</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Line total</th></tr></thead>
+              <tbody>${q.allowances.map((l) => `<tr><td>${l.allowance}</td><td class="num">${l.quantity}</td><td class="num">${money(l.amount)}</td><td class="num">${money(l.lineTotal)}</td></tr>`).join("")}</tbody>
+            </table>`
+          : ""
+      }
       <div class="totals">
         <div class="box"><span class="label">Blended award rate</span><span class="value">${money(q.blended_award_rate)}/hr</span></div>
         <div class="box"><span class="label">Cost rate (+${q.oncost_pct}% on-costs)</span><span class="value">${money(q.cost_rate)}/hr</span></div>

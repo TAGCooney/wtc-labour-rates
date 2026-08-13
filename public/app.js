@@ -7,6 +7,7 @@ let RATE_CATEGORIES = [];
 let RATE_INFO = { hasCasualTable: false, usedFallbackLoading: false };
 let LAST_BREAKDOWN = null;
 let SETTINGS = { oncostFloorPct: 22.7, defaultMarginPct: 15 };
+let ALLOWANCES = { common: [], other: [] };
 
 const $ = (id) => document.getElementById(id);
 const money = (n) => `$${Number(n).toFixed(2)}`;
@@ -144,6 +145,8 @@ async function selectAward(code) {
   renderAwardInfo();
 
   CLASSIFICATIONS = await api(`/api/staff/awards/${code}/classifications`);
+  ALLOWANCES = await api(`/api/staff/awards/${code}/allowances`);
+  renderAllowances();
   const RATE_TYPE_ORDER = ["AD", "JN", "CA", "TN", "AP", "AA"];
   const rateTypes = [...new Map(CLASSIFICATIONS.map((c) => [c.employee_rate_type_code, c.employee_rate_type_label])).entries()]
     .sort((a, b) => {
@@ -254,6 +257,63 @@ function renderRoster(priorHours) {
   `;
 }
 
+function allowanceRow(a, i, listName) {
+  return `<tr>
+    <td>${a.allowance}</td>
+    <td class="muted small">${money(a.allowance_amount)} ${a.payment_frequency || ""}</td>
+    <td class="num"><input type="number" min="0" step="1" class="allowance-qty" data-list="${listName}" data-idx="${i}" style="text-align:right"></td>
+  </tr>`;
+}
+
+function renderAllowances() {
+  const section = $("allowancesSection");
+  if (!ALLOWANCES.common.length && !ALLOWANCES.other.length) {
+    section.innerHTML = "";
+    return;
+  }
+  section.innerHTML = `
+    <label class="mt-8">Allowances for this award (optional) — enter a quantity for any that apply to this roster.</label>
+    ${
+      ALLOWANCES.common.length
+        ? `<table>
+            <thead><tr><th>Allowance</th><th>Rate</th><th class="num" style="width:110px">Qty</th></tr></thead>
+            <tbody>${ALLOWANCES.common.map((a, i) => allowanceRow(a, i, "common")).join("")}</tbody>
+          </table>`
+        : ""
+    }
+    ${
+      ALLOWANCES.other.length
+        ? `<button type="button" class="link mt-8" id="toggleOtherAllowancesBtn">Show ${ALLOWANCES.other.length} other allowance(s) for this award</button>
+           <div id="otherAllowancesTable" hidden>
+             <table>
+               <thead><tr><th>Allowance</th><th>Rate</th><th class="num" style="width:110px">Qty</th></tr></thead>
+               <tbody>${ALLOWANCES.other.map((a, i) => allowanceRow(a, i, "other")).join("")}</tbody>
+             </table>
+           </div>`
+        : ""
+    }
+  `;
+  const toggleBtn = document.getElementById("toggleOtherAllowancesBtn");
+  if (toggleBtn) {
+    toggleBtn.addEventListener("click", () => {
+      const table = document.getElementById("otherAllowancesTable");
+      table.hidden = !table.hidden;
+    });
+  }
+}
+
+function collectAllowances() {
+  const selections = [];
+  document.querySelectorAll(".allowance-qty").forEach((input) => {
+    const quantity = parseFloat(input.value);
+    if (quantity > 0) {
+      const a = ALLOWANCES[input.dataset.list][Number(input.dataset.idx)];
+      selections.push({ allowance: a.allowance, quantity });
+    }
+  });
+  return selections;
+}
+
 function collectRoster() {
   const roster = [];
   document.querySelectorAll(".roster-hours").forEach((input) => {
@@ -280,6 +340,7 @@ async function calculate() {
     oncostPct: parseFloat($("oncostPct").value),
     marginPct: parseFloat($("marginPct").value),
     roster,
+    allowances: collectAllowances(),
   };
   try {
     LAST_BREAKDOWN = await api("/api/staff/quotes/preview", { method: "POST", body: JSON.stringify(payload) });
@@ -300,6 +361,14 @@ function renderBreakdown(b) {
         ${b.lines.map((l) => `<tr><td>${l.penaltyDescription}${otBadge(l.isOvertime)}</td><td class="num">${l.hours}</td><td class="num">${money(l.loadedRate)}</td><td class="num">${money(l.lineTotal)}</td></tr>`).join("")}
       </tbody>
     </table>
+    ${
+      b.allowanceLines && b.allowanceLines.length
+        ? `<table>
+            <thead><tr><th>Allowance</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Line total</th></tr></thead>
+            <tbody>${b.allowanceLines.map((l) => `<tr><td>${l.allowance}</td><td class="num">${l.quantity}</td><td class="num">${money(l.amount)}</td><td class="num">${money(l.lineTotal)}</td></tr>`).join("")}</tbody>
+          </table>`
+        : ""
+    }
     <div class="row mt-8" style="gap:24px">
       <div class="breakdown-total"><span class="label">Blended award rate</span>${money(b.blendedAwardRate)}/hr</div>
       <div class="breakdown-total"><span class="label">Cost rate (+ ${b.oncostPct}% on-costs)</span>${money(b.costRate)}/hr</div>
@@ -336,6 +405,7 @@ async function saveQuote() {
     oncostPct: parseFloat($("oncostPct").value),
     marginPct: parseFloat($("marginPct").value),
     roster,
+    allowances: collectAllowances(),
     notes: $("notes").value.trim(),
   };
   try {

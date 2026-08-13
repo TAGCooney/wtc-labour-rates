@@ -1,12 +1,18 @@
 import { match } from "../router.js";
 import { json, error } from "../http.js";
 import { requireSession } from "./staff.js";
-import { blendAwardRate, applyOncostAndMargin } from "../calc.js";
+import { blendAwardRate, applyAllowances, applyOncostAndMargin } from "../calc.js";
 import { getRateCategories } from "../rates.js";
+import { getAllowanceRows } from "../allowances.js";
 import { getSettings } from "../settings.js";
 
 function quoteRow(row) {
-  return { ...row, roster: JSON.parse(row.roster_json), isCasual: !!row.is_casual };
+  return {
+    ...row,
+    roster: JSON.parse(row.roster_json),
+    allowances: row.allowances_json ? JSON.parse(row.allowances_json) : [],
+    isCasual: !!row.is_casual,
+  };
 }
 
 export async function handleQuotes(request, env, url) {
@@ -31,8 +37,8 @@ export async function handleQuotes(request, env, url) {
       `INSERT INTO quotes (
          staff_id, client_name, role_title, award_code, award_name, base_pay_rate_id, classification_name,
          employee_rate_type_code, is_casual, casual_loading_pct, casual_rate_source, oncost_pct, margin_pct, roster_json,
-         blended_award_rate, cost_rate, charge_rate, notes
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`
+         allowances_json, blended_award_rate, cost_rate, charge_rate, notes
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`
     )
       .bind(
         staff.id,
@@ -49,6 +55,7 @@ export async function handleQuotes(request, env, url) {
         body.oncostPct,
         body.marginPct,
         JSON.stringify(result.lines),
+        result.allowanceLines.length ? JSON.stringify(result.allowanceLines) : null,
         result.blendedAwardRate,
         result.costRate,
         result.chargeRate,
@@ -103,9 +110,17 @@ async function computeQuote(request, env) {
     return error(e.message, 400);
   }
 
+  let withAllowances;
+  try {
+    const allowanceRows = await getAllowanceRows(env, body.awardCode);
+    withAllowances = applyAllowances(body.allowances, allowanceRows, blended.totalPay, blended.totalHours);
+  } catch (e) {
+    return error(e.message, 400);
+  }
+
   let costAndCharge;
   try {
-    costAndCharge = applyOncostAndMargin(blended.blendedAwardRate, oncostPct, marginPct, settings.oncostFloorPct);
+    costAndCharge = applyOncostAndMargin(withAllowances.blendedAwardRate, oncostPct, marginPct, settings.oncostFloorPct);
   } catch (e) {
     return error(e.message, 400);
   }
@@ -114,9 +129,10 @@ async function computeQuote(request, env) {
 
   const result = {
     lines: blended.lines,
+    allowanceLines: withAllowances.lines,
     totalHours: blended.totalHours,
-    totalPay: blended.totalPay,
-    blendedAwardRate: blended.blendedAwardRate,
+    totalPay: withAllowances.totalPay,
+    blendedAwardRate: withAllowances.blendedAwardRate,
     oncostPct,
     marginPct,
     costRate: costAndCharge.costRate,

@@ -2,6 +2,7 @@ import { match } from "../router.js";
 import { json, error } from "../http.js";
 import { requireSession } from "./staff.js";
 import { getRateCategories } from "../rates.js";
+import { splitAllowances, getAllowanceRows } from "../allowances.js";
 
 const RATE_TYPE_LABELS = {
   AD: "Adult",
@@ -54,19 +55,7 @@ export async function handleAwards(request, env, url) {
 
   m = match("/api/staff/awards/:code/allowances", pathname);
   if (m && method === "GET") {
-    const wage = await env.DB.prepare(
-      `SELECT allowance, is_all_purpose, rate_percent, allowance_amount, rate_unit, payment_frequency
-       FROM wage_allowances WHERE award_code = ? ORDER BY display_order`
-    )
-      .bind(m.code)
-      .all();
-    const expense = await env.DB.prepare(
-      `SELECT allowance, allowance_amount, payment_frequency
-       FROM expense_allowances WHERE award_code = ? ORDER BY display_order`
-    )
-      .bind(m.code)
-      .all();
-    return json({ wageAllowances: wage.results, expenseAllowances: expense.results });
+    return json(splitAllowances(await getAllowanceRows(env, m.code)));
   }
 
   return error("Not found", 404);
