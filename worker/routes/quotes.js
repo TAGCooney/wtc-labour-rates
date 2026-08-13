@@ -1,7 +1,7 @@
 import { match } from "../router.js";
 import { json, error } from "../http.js";
 import { requireSession } from "./staff.js";
-import { blendAwardRate, applyAllowances, applyOncostAndMargin } from "../calc.js";
+import { blendAwardRate, applyAllowances, applyOncostAndMargin, addChargeRates } from "../calc.js";
 import { getRateCategories } from "../rates.js";
 import { getAllowanceRows } from "../allowances.js";
 import { getSettings } from "../settings.js";
@@ -113,7 +113,7 @@ async function computeQuote(request, env) {
   let withAllowances;
   try {
     const allowanceRows = await getAllowanceRows(env, body.awardCode);
-    withAllowances = applyAllowances(body.allowances, allowanceRows, blended.totalPay, blended.totalHours);
+    withAllowances = applyAllowances(body.allowances, allowanceRows, blended.lines, blended.totalPay, blended.totalHours);
   } catch (e) {
     return error(e.message, 400);
   }
@@ -128,10 +128,14 @@ async function computeQuote(request, env) {
   const casualRateSource = !body.isCasual ? "not_casual" : hasCasualTable ? "award_table" : "loading_fallback";
 
   const result = {
-    lines: blended.lines,
-    allowanceLines: withAllowances.lines,
+    // Per-category charge rate: what the client is actually invoiced for each
+    // category -- exactly what the staff member earns there, plus on-costs/margin.
+    lines: addChargeRates(blended.lines, oncostPct, marginPct, "loadedRate", "hours"),
+    allowanceLines: addChargeRates(withAllowances.lines, oncostPct, marginPct, "amount", "quantity"),
     totalHours: blended.totalHours,
     totalPay: withAllowances.totalPay,
+    // Weighted average across the roster -- a reference figure only. The
+    // client is never actually charged this single number; see lines above.
     blendedAwardRate: withAllowances.blendedAwardRate,
     oncostPct,
     marginPct,

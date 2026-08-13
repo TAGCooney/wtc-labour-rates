@@ -74,25 +74,30 @@
         }</div>
         <div><span class="k">Prepared by:</span> ${q.staff_name}</div>
       </div>
+      <p class="small" style="color:#666">Charged exactly as the staff member earns, per category, plus on-costs and margin — not a single blended rate.</p>
       <table>
-        <thead><tr><th>Pay category</th><th class="num">Hours</th><th class="num">Rate ($/hr)</th><th class="num">Line total</th></tr></thead>
+        <thead><tr><th>Pay category</th><th class="num">Hours</th><th class="num">Award rate</th><th class="num">Charge rate (excl. GST)</th><th class="num">Charge total</th></tr></thead>
         <tbody>
-          ${q.roster.map((l) => `<tr><td>${l.penaltyDescription}${l.isOvertime ? ' <span class="ot-badge">OT</span>' : ""}</td><td class="num">${l.hours}</td><td class="num">${money(l.loadedRate)}</td><td class="num">${money(l.lineTotal)}</td></tr>`).join("")}
+          ${q.roster.map((l) => `<tr><td>${l.penaltyDescription}${l.isOvertime ? ' <span class="ot-badge">OT</span>' : ""}</td><td class="num">${l.hours}</td><td class="num">${money(l.loadedRate)}</td><td class="num">${money(l.chargeRate)}</td><td class="num">${money(l.chargeLineTotal)}</td></tr>`).join("")}
         </tbody>
       </table>
       ${
         q.allowances && q.allowances.length
           ? `<table>
-              <thead><tr><th>Allowance</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Line total</th></tr></thead>
-              <tbody>${q.allowances.map((l) => `<tr><td>${l.allowance}</td><td class="num">${l.quantity}</td><td class="num">${money(l.amount)}</td><td class="num">${money(l.lineTotal)}</td></tr>`).join("")}</tbody>
+              <thead><tr><th>Allowance</th><th class="num">Qty</th><th class="num">Award rate</th><th class="num">Charge rate (excl. GST)</th><th class="num">Charge total</th></tr></thead>
+              <tbody>${q.allowances.map((l) => `<tr><td>${l.allowance}</td><td class="num">${l.quantity}</td><td class="num">${money(l.amount)}</td><td class="num">${money(l.chargeRate)}</td><td class="num">${money(l.chargeLineTotal)}</td></tr>`).join("")}</tbody>
             </table>`
           : ""
       }
       <div class="totals">
-        <div class="box"><span class="label">Blended award rate</span><span class="value">${money(q.blended_award_rate)}/hr</span></div>
-        <div class="box"><span class="label">Cost rate (+${q.oncost_pct}% on-costs)</span><span class="value">${money(q.cost_rate)}/hr</span></div>
-        <div class="box"><span class="label">Charge rate (+${q.margin_pct}% margin) — excl. GST</span><span class="value charge">${money(q.charge_rate)}/hr</span></div>
+        <div class="box"><span class="label">Total charge (excl. GST) for this roster</span><span class="value charge">${money(
+          q.roster.reduce((s, l) => s + l.chargeLineTotal, 0) + (q.allowances || []).reduce((s, l) => s + l.chargeLineTotal, 0)
+        )}</span></div>
       </div>
+      <p class="small" style="color:#666">
+        Weighted average across this roster (reference only — not what's charged): award ${money(q.blended_award_rate)}/hr →
+        cost ${money(q.cost_rate)}/hr (+${q.oncost_pct}% on-costs) → charge ${money(q.charge_rate)}/hr (+${q.margin_pct}% margin)
+      </p>
       <p class="small" style="color:#666">All rates above are exclusive of GST. GST (if applicable) is charged in addition on invoicing.</p>
       ${q.notes ? `<p><strong>Notes:</strong> ${q.notes}</p>` : ""}
     `;

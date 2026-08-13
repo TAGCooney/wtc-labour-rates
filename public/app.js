@@ -12,6 +12,7 @@ let ALLOWANCES = { common: [], other: [] };
 const $ = (id) => document.getElementById(id);
 const money = (n) => `$${Number(n).toFixed(2)}`;
 const isOvertimeClause = (clauseDescription) => /overtime/i.test(clauseDescription || "");
+const isHourlyAllowance = (paymentFrequency) => /hour/i.test(paymentFrequency || "");
 const otBadge = (isOvertime) => (isOvertime ? '<span class="pill" style="color:var(--amber);border-color:var(--amber);margin-left:6px">OT</span>' : "");
 
 async function api(path, opts) {
@@ -146,7 +147,6 @@ async function selectAward(code) {
 
   CLASSIFICATIONS = await api(`/api/staff/awards/${code}/classifications`);
   ALLOWANCES = await api(`/api/staff/awards/${code}/allowances`);
-  renderAllowances();
   const RATE_TYPE_ORDER = ["AD", "JN", "CA", "TN", "AP", "AA"];
   const rateTypes = [...new Map(CLASSIFICATIONS.map((c) => [c.employee_rate_type_code, c.employee_rate_type_label])).entries()]
     .sort((a, b) => {
@@ -222,6 +222,22 @@ function collectRosterHoursByCategory() {
   return map;
 }
 
+// Ordinary-hours roster categories with hours currently entered -- the only
+// valid attachment targets for a per-hour add-on allowance (overtime hours
+// already carry their own premium and don't stack with these).
+function eligibleOrdinaryCategories() {
+  const eligible = [];
+  document.querySelectorAll(".roster-hours").forEach((input) => {
+    const hours = parseFloat(input.value);
+    if (!(hours > 0)) return;
+    const cat = RATE_CATEGORIES[Number(input.dataset.idx)];
+    if (cat && !isOvertimeClause(cat.clause_description)) {
+      eligible.push({ penaltyDescription: cat.penalty_description, hours });
+    }
+  });
+  return eligible;
+}
+
 function renderRoster(priorHours) {
   priorHours = priorHours || {};
   const section = $("rosterSection");
@@ -246,6 +262,7 @@ let note = `<div class="notice warn">
 
   if (!RATE_CATEGORIES.length) {
     section.innerHTML = note;
+    renderAllowances();
     return;
   }
   section.innerHTML = `
@@ -265,39 +282,68 @@ let note = `<div class="notice warn">
       </tbody>
     </table>
   `;
+  document.querySelectorAll(".roster-hours").forEach((input) => {
+    input.addEventListener("input", () => renderAllowances(collectAllowancePriorState()));
+  });
+  renderAllowances(collectAllowancePriorState());
 }
 
-function allowanceRow(a, i, listName) {
+function allowanceRow(a, i, listName, eligible, prior) {
+  prior = prior || {};
+  const hourly = isHourlyAllowance(a.payment_frequency);
+  const qtyCell = hourly
+    ? eligible.length
+      ? `<select class="allowance-category" data-list="${listName}" data-idx="${i}">
+          <option value="">— pick category —</option>
+          ${eligible.map((c) => `<option value="${c.penaltyDescription}" ${prior.appliesToCategory === c.penaltyDescription ? "selected" : ""}>${c.penaltyDescription} (${c.hours}h)</option>`).join("")}
+        </select>
+         <input type="number" min="0" step="0.25" class="allowance-qty" data-list="${listName}" data-idx="${i}" value="${prior.quantity || ""}" placeholder="hours" style="text-align:right;margin-top:4px">`
+      : `<span class="small muted">Enter ordinary hours in the roster above first</span>`
+    : `<input type="number" min="0" step="1" class="allowance-qty" data-list="${listName}" data-idx="${i}" value="${prior.quantity || ""}" style="text-align:right">`;
   return `<tr>
-    <td>${a.allowance}</td>
+    <td>${a.allowance}${hourly ? ' <span class="small muted">(per hour — attaches to an ordinary-hours category)</span>' : ""}</td>
     <td class="muted small">${money(a.allowance_amount)} ${a.payment_frequency || ""}</td>
-    <td class="num"><input type="number" min="0" step="1" class="allowance-qty" data-list="${listName}" data-idx="${i}" style="text-align:right"></td>
+    <td class="num">${qtyCell}</td>
   </tr>`;
 }
 
-function renderAllowances() {
+function collectAllowancePriorState() {
+  const prior = {};
+  document.querySelectorAll(".allowance-qty").forEach((input) => {
+    const a = ALLOWANCES[input.dataset.list][Number(input.dataset.idx)];
+    if (!a) return;
+    const sel = document.querySelector(`.allowance-category[data-list="${input.dataset.list}"][data-idx="${input.dataset.idx}"]`);
+    prior[a.allowance] = { quantity: input.value, appliesToCategory: sel ? sel.value : undefined };
+  });
+  return prior;
+}
+
+function renderAllowances(priorSelections) {
+  priorSelections = priorSelections || {};
   const section = $("allowancesSection");
   if (!ALLOWANCES.common.length && !ALLOWANCES.other.length) {
     section.innerHTML = "";
     return;
   }
+  const eligible = eligibleOrdinaryCategories();
+  const otherVisible = !document.getElementById("otherAllowancesTable") || !document.getElementById("otherAllowancesTable").hidden;
   section.innerHTML = `
     <label class="mt-8">Allowances for this award (optional) — enter a quantity for any that apply to this roster.</label>
     ${
       ALLOWANCES.common.length
         ? `<table>
-            <thead><tr><th>Allowance</th><th>Rate</th><th class="num" style="width:110px">Qty</th></tr></thead>
-            <tbody>${ALLOWANCES.common.map((a, i) => allowanceRow(a, i, "common")).join("")}</tbody>
+            <thead><tr><th>Allowance</th><th>Rate</th><th class="num" style="width:220px">Qty</th></tr></thead>
+            <tbody>${ALLOWANCES.common.map((a, i) => allowanceRow(a, i, "common", eligible, priorSelections[a.allowance])).join("")}</tbody>
           </table>`
         : ""
     }
     ${
       ALLOWANCES.other.length
-        ? `<button type="button" class="link mt-8" id="toggleOtherAllowancesBtn">Show ${ALLOWANCES.other.length} other allowance(s) for this award</button>
-           <div id="otherAllowancesTable" hidden>
+        ? `<button type="button" class="link mt-8" id="toggleOtherAllowancesBtn">${otherVisible ? "Hide" : "Show"} ${ALLOWANCES.other.length} other allowance(s) for this award</button>
+           <div id="otherAllowancesTable" ${otherVisible ? "" : "hidden"}>
              <table>
-               <thead><tr><th>Allowance</th><th>Rate</th><th class="num" style="width:110px">Qty</th></tr></thead>
-               <tbody>${ALLOWANCES.other.map((a, i) => allowanceRow(a, i, "other")).join("")}</tbody>
+               <thead><tr><th>Allowance</th><th>Rate</th><th class="num" style="width:220px">Qty</th></tr></thead>
+               <tbody>${ALLOWANCES.other.map((a, i) => allowanceRow(a, i, "other", eligible, priorSelections[a.allowance])).join("")}</tbody>
              </table>
            </div>`
         : ""
@@ -308,6 +354,7 @@ function renderAllowances() {
     toggleBtn.addEventListener("click", () => {
       const table = document.getElementById("otherAllowancesTable");
       table.hidden = !table.hidden;
+      toggleBtn.textContent = `${table.hidden ? "Show" : "Hide"} ${ALLOWANCES.other.length} other allowance(s) for this award`;
     });
   }
 }
@@ -318,7 +365,8 @@ function collectAllowances() {
     const quantity = parseFloat(input.value);
     if (quantity > 0) {
       const a = ALLOWANCES[input.dataset.list][Number(input.dataset.idx)];
-      selections.push({ allowance: a.allowance, quantity });
+      const sel = document.querySelector(`.allowance-category[data-list="${input.dataset.list}"][data-idx="${input.dataset.idx}"]`);
+      selections.push({ allowance: a.allowance, quantity, appliesToCategory: sel ? sel.value : undefined });
     }
   });
   return selections;
@@ -364,25 +412,30 @@ async function calculate() {
 
 function renderBreakdown(b) {
   $("breakdown").innerHTML = `
-    <h3 class="mt-8" style="margin-bottom:10px">Rate build-up</h3>
+    <h3 class="mt-8" style="margin-bottom:10px">Rate card — what the client is actually charged, per category</h3>
+    <p class="small muted">The client is invoiced exactly what the staff member earns for each category, plus on-costs and margin — never a single blended rate.</p>
     <table>
-      <thead><tr><th>Category</th><th class="num">Hours</th><th class="num">Rate ($/hr)</th><th class="num">Line total</th></tr></thead>
+      <thead><tr><th>Category</th><th class="num">Hours</th><th class="num">Award rate</th><th class="num">Charge rate (excl. GST)</th><th class="num">Charge total</th></tr></thead>
       <tbody>
-        ${b.lines.map((l) => `<tr><td>${l.penaltyDescription}${otBadge(l.isOvertime)}</td><td class="num">${l.hours}</td><td class="num">${money(l.loadedRate)}</td><td class="num">${money(l.lineTotal)}</td></tr>`).join("")}
+        ${b.lines.map((l) => `<tr><td>${l.penaltyDescription}${otBadge(l.isOvertime)}</td><td class="num">${l.hours}</td><td class="num">${money(l.loadedRate)}</td><td class="num">${money(l.chargeRate)}</td><td class="num">${money(l.chargeLineTotal)}</td></tr>`).join("")}
       </tbody>
     </table>
     ${
       b.allowanceLines && b.allowanceLines.length
         ? `<table>
-            <thead><tr><th>Allowance</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Line total</th></tr></thead>
-            <tbody>${b.allowanceLines.map((l) => `<tr><td>${l.allowance}</td><td class="num">${l.quantity}</td><td class="num">${money(l.amount)}</td><td class="num">${money(l.lineTotal)}</td></tr>`).join("")}</tbody>
+            <thead><tr><th>Allowance</th><th class="num">Qty</th><th class="num">Award rate</th><th class="num">Charge rate (excl. GST)</th><th class="num">Charge total</th></tr></thead>
+            <tbody>${b.allowanceLines.map((l) => `<tr><td>${l.allowance}</td><td class="num">${l.quantity}</td><td class="num">${money(l.amount)}</td><td class="num">${money(l.chargeRate)}</td><td class="num">${money(l.chargeLineTotal)}</td></tr>`).join("")}</tbody>
           </table>`
         : ""
     }
     <div class="row mt-8" style="gap:24px">
-      <div class="breakdown-total"><span class="label">Blended award rate</span>${money(b.blendedAwardRate)}/hr</div>
-      <div class="breakdown-total"><span class="label">Cost rate (+ ${b.oncostPct}% on-costs)</span>${money(b.costRate)}/hr</div>
-      <div class="breakdown-total"><span class="label">Charge rate excl. GST (+ ${b.marginPct}% margin)</span>${money(b.chargeRate)}/hr</div>
+      <div class="breakdown-total"><span class="label">Total charge (excl. GST) for this roster</span>${money(
+        b.lines.reduce((s, l) => s + l.chargeLineTotal, 0) + (b.allowanceLines || []).reduce((s, l) => s + l.chargeLineTotal, 0)
+      )}</div>
+    </div>
+    <div class="small muted mt-8">
+      Weighted average across this roster (reference only — not what's charged): award $${money(b.blendedAwardRate)}/hr →
+      cost $${money(b.costRate)}/hr (+${b.oncostPct}% on-costs) → charge $${money(b.chargeRate)}/hr (+${b.marginPct}% margin)
     </div>
     <div class="small muted mt-8">Total rostered hours: ${b.totalHours} — total award pay: ${money(b.totalPay)}</div>
     <div class="small muted mt-8">Casual rate source: ${
