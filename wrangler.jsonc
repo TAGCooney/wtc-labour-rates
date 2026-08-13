@@ -12,7 +12,7 @@
     {
       "binding": "DB",
       "database_name": "wtc-labour-rates",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID"
+      "database_id": "5086eef5-633d-43bf-b7da-e8b9d8609ea8"
     }
   ]
 }
