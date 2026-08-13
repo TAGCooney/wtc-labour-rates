@@ -1,8 +1,10 @@
 // Rate build-up: award rate (blended from entered hours x official penalty-category
-// rates) -> on-costs (super/payroll tax/WorkCover, floored at 22.7%) -> margin.
-
-export const ONCOST_FLOOR_PCT = 22.7;
-export const DEFAULT_MARGIN_PCT = 15;
+// rates) -> on-costs (super/payroll tax/WorkCover, floored at a configurable %) -> margin.
+// The floor and default margin are owner-editable business settings stored in
+// app_settings (see worker/settings.js), not constants -- these are just the
+// values used if no settings row exists yet (should never happen post-migration).
+export const FALLBACK_ONCOST_FLOOR_PCT = 22.7;
+export const FALLBACK_DEFAULT_MARGIN_PCT = 15;
 
 const isOvertimeClause = (clauseDescription) => /overtime/i.test(clauseDescription || "");
 
@@ -38,9 +40,9 @@ export function blendAwardRate(roster, rateRows) {
   return { lines, totalHours, totalPay, blendedAwardRate: totalPay / totalHours };
 }
 
-export function applyOncostAndMargin(blendedAwardRate, oncostPct, marginPct) {
-  if (oncostPct < ONCOST_FLOOR_PCT) {
-    throw new Error(`On-cost % cannot be below the ${ONCOST_FLOOR_PCT}% floor (super + payroll tax + WorkCover)`);
+export function applyOncostAndMargin(blendedAwardRate, oncostPct, marginPct, oncostFloorPct) {
+  if (oncostPct < oncostFloorPct) {
+    throw new Error(`On-cost % cannot be below the ${oncostFloorPct}% floor (super + payroll tax + WorkCover)`);
   }
   const costRate = blendedAwardRate * (1 + oncostPct / 100);
   const chargeRate = costRate * (1 + (Number(marginPct) || 0) / 100);

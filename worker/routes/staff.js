@@ -10,6 +10,7 @@ import {
   createInviteToken,
   hashInviteToken,
 } from "../auth.js";
+import { getSettings, setSetting } from "../settings.js";
 
 function staffRow(row) {
   return {
@@ -19,13 +20,14 @@ function staffRow(row) {
     role: row.role,
     mustChange: !!row.must_change,
     pendingInvite: !!row.invite_token_hash,
+    active: !!row.active,
   };
 }
 
 export async function requireSession(request, env) {
   const session = await readSession(request, env);
   if (!session) return null;
-  const row = await env.DB.prepare("SELECT * FROM staff_users WHERE id = ?").bind(session.id).first();
+  const row = await env.DB.prepare("SELECT * FROM staff_users WHERE id = ? AND active = 1").bind(session.id).first();
   if (!row) return null;
   return row;
 }
@@ -39,7 +41,7 @@ export async function handleStaffAuth(request, env, url) {
     const row = await env.DB.prepare("SELECT * FROM staff_users WHERE email = ?")
       .bind((body.email || "").trim().toLowerCase())
       .first();
-    if (!row || !(await verifyPassword(body.password || "", row))) {
+    if (!row || !row.active || !(await verifyPassword(body.password || "", row))) {
       return error("Invalid email or password", 401);
     }
     const cookie = await makeCookie(env, { id: row.id, role: row.role, exp: Date.now() + 12 * 3600 * 1000 });
@@ -101,16 +103,20 @@ export async function handleStaffAuth(request, env, url) {
     return json({ ok: true });
   }
 
+  // Only an owner may promote/demote to admin, or touch business settings.
   if (match("/api/staff/accounts", pathname) && method === "GET") {
-    if (!requireRole(session, ["admin"])) return error("Forbidden", 403);
+    if (!requireRole(session, ["admin", "owner"])) return error("Forbidden", 403);
     const rows = await env.DB.prepare("SELECT * FROM staff_users ORDER BY name").all();
     return json(rows.results.map(staffRow));
   }
   if (match("/api/staff/accounts", pathname) && method === "POST") {
-    if (!requireRole(session, ["admin"])) return error("Forbidden", 403);
+    if (!requireRole(session, ["admin", "owner"])) return error("Forbidden", 403);
     const body = await request.json().catch(() => ({}));
     if (!body.email || !body.name || !body.role) return error("email, name, role required");
     if (!["admin", "staff"].includes(body.role)) return error("role must be admin or staff");
+    if (body.role === "admin" && session.role !== "owner") {
+      return error("Only an owner can create admin accounts", 403);
+    }
     // Placeholder password nobody knows -- login stays impossible until the invite link is used.
     const { salt, hash, iter } = await hashPassword(crypto.randomUUID());
     const { token, hash: inviteHash, expiresAt } = await createInviteToken();
@@ -126,17 +132,33 @@ export async function handleStaffAuth(request, env, url) {
 
   let m = match("/api/staff/accounts/:id", pathname);
   if (m && method === "PATCH") {
-    if (!requireRole(session, ["admin"])) return error("Forbidden", 403);
+    if (!requireRole(session, ["admin", "owner"])) return error("Forbidden", 403);
+    const target = await env.DB.prepare("SELECT * FROM staff_users WHERE id = ?").bind(m.id).first();
+    if (!target) return error("Not found", 404);
+    if (target.role === "owner") return error("Owner accounts can't be modified here", 403);
+
     const body = await request.json().catch(() => ({}));
+    if (body.role !== undefined) {
+      if (session.role !== "owner") return error("Only an owner can change roles", 403);
+      if (!["admin", "staff"].includes(body.role)) return error("role must be admin or staff");
+    }
+    if (body.active !== undefined) {
+      if (target.id === session.id) return error("You can't deactivate your own account", 400);
+      if (session.role === "admin" && target.role !== "staff") {
+        return error("Admins can only deactivate/reactivate staff-level accounts", 403);
+      }
+    }
+
     const fields = [];
     const values = [];
     for (const [col, key] of [
       ["name", "name"],
       ["role", "role"],
+      ["active", "active"],
     ]) {
       if (body[key] !== undefined) {
         fields.push(`${col} = ?`);
-        values.push(body[key]);
+        values.push(key === "active" ? (body[key] ? 1 : 0) : body[key]);
       }
     }
     if (!fields.length) return error("Nothing to update");
@@ -144,8 +166,24 @@ export async function handleStaffAuth(request, env, url) {
     const row = await env.DB.prepare(`UPDATE staff_users SET ${fields.join(", ")} WHERE id = ? RETURNING *`)
       .bind(...values)
       .first();
-    if (!row) return error("Not found", 404);
     return json(staffRow(row));
+  }
+
+  if (match("/api/staff/settings", pathname) && method === "GET") {
+    return json(await getSettings(env));
+  }
+  if (match("/api/staff/settings", pathname) && method === "POST") {
+    if (!requireRole(session, ["owner"])) return error("Forbidden -- only an owner can change business settings", 403);
+    const body = await request.json().catch(() => ({}));
+    if (body.oncostFloorPct != null) {
+      if (Number(body.oncostFloorPct) < 0) return error("On-cost floor % can't be negative");
+      await setSetting(env, "oncost_floor_pct", Number(body.oncostFloorPct));
+    }
+    if (body.defaultMarginPct != null) {
+      if (Number(body.defaultMarginPct) < 0) return error("Default margin % can't be negative");
+      await setSetting(env, "default_margin_pct", Number(body.defaultMarginPct));
+    }
+    return json(await getSettings(env));
   }
 
   return error("Not found", 404);

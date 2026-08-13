@@ -6,6 +6,7 @@ let SELECTED_CLASSIFICATION = null;
 let RATE_CATEGORIES = [];
 let RATE_INFO = { hasCasualTable: false, usedFallbackLoading: false };
 let LAST_BREAKDOWN = null;
+let SETTINGS = { oncostFloorPct: 22.7, defaultMarginPct: 15 };
 
 const $ = (id) => document.getElementById(id);
 const money = (n) => `$${Number(n).toFixed(2)}`;
@@ -34,10 +35,23 @@ async function init() {
   }
   $("whoami").textContent = `${ME.name} (${ME.role})`;
   if (ME.mustChange) $("pwModalWrap").hidden = false;
-  if (ME.role === "admin") {
+  if (ME.role === "admin" || ME.role === "owner") {
     $("adminCard").hidden = false;
+    if (ME.role === "owner") {
+      $("newRole").innerHTML = `<option value="staff">Staff</option><option value="admin">Admin</option>`;
+    }
     loadAccounts();
   }
+  if (ME.role === "owner") {
+    $("settingsCard").hidden = false;
+  }
+
+  SETTINGS = await api("/api/staff/settings");
+  $("oncostPct").value = SETTINGS.oncostFloorPct;
+  $("oncostPct").min = SETTINGS.oncostFloorPct;
+  $("marginPct").value = SETTINGS.defaultMarginPct;
+  $("settingOncostFloor").value = SETTINGS.oncostFloorPct;
+  $("settingDefaultMargin").value = SETTINGS.defaultMarginPct;
 
   AWARDS = await api("/api/staff/awards");
   loadHistory();
@@ -79,6 +93,23 @@ function wireEvents() {
   $("saveBtn").addEventListener("click", saveQuote);
 
   $("addAccountBtn").addEventListener("click", addAccount);
+  $("saveSettingsBtn").addEventListener("click", saveSettings);
+}
+
+async function saveSettings() {
+  try {
+    SETTINGS = await api("/api/staff/settings", {
+      method: "POST",
+      body: JSON.stringify({
+        oncostFloorPct: parseFloat($("settingOncostFloor").value),
+        defaultMarginPct: parseFloat($("settingDefaultMargin").value),
+      }),
+    });
+    $("oncostPct").min = SETTINGS.oncostFloorPct;
+    $("settingsResult").innerHTML = `<div class="notice">Saved. New quotes will use these as the default.</div>`;
+  } catch (e) {
+    $("settingsResult").innerHTML = `<div class="notice error">${e.message}</div>`;
+  }
 }
 
 // --- award search ---
@@ -341,17 +372,37 @@ async function loadHistory() {
 
 async function loadAccounts() {
   const accounts = await api("/api/staff/accounts");
+  const canToggle = (a) => a.role !== "owner" && a.id !== ME.id && (ME.role === "owner" || a.role === "staff");
   $("accountsList").innerHTML = `<table>
-    <thead><tr><th>Name</th><th>Email</th><th>Role</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
     <tbody>
       ${accounts.map(
-        (a) =>
-          `<tr><td>${a.name}</td><td>${a.email}</td><td>${a.role}</td><td>${
-            a.pendingInvite ? '<span class="pill uncertain">setup link pending</span>' : a.mustChange ? '<span class="pill uncertain">pending first login</span>' : ""
-          }</td></tr>`
+        (a) => `<tr>
+          <td>${a.name}</td>
+          <td>${a.email}</td>
+          <td>${a.role}</td>
+          <td>
+            ${!a.active ? '<span class="pill" style="color:var(--red);border-color:var(--red)">deactivated</span>' : ""}
+            ${a.active && a.pendingInvite ? '<span class="pill uncertain">setup link pending</span>' : ""}
+            ${a.active && !a.pendingInvite && a.mustChange ? '<span class="pill uncertain">pending first login</span>' : ""}
+          </td>
+          <td>${canToggle(a) ? `<button type="button" class="link toggle-active-btn" data-id="${a.id}" data-active="${a.active ? 1 : 0}">${a.active ? "Deactivate" : "Reactivate"}</button>` : ""}</td>
+        </tr>`
       ).join("")}
     </tbody>
   </table>`;
+  document.querySelectorAll(".toggle-active-btn").forEach((btn) => {
+    btn.addEventListener("click", () => toggleAccountActive(btn.dataset.id, btn.dataset.active === "1"));
+  });
+}
+
+async function toggleAccountActive(id, currentlyActive) {
+  try {
+    await api(`/api/staff/accounts/${id}`, { method: "PATCH", body: JSON.stringify({ active: !currentlyActive }) });
+    loadAccounts();
+  } catch (e) {
+    $("newAccountResult").innerHTML = `<div class="notice error">${e.message}</div>`;
+  }
 }
 
 async function addAccount() {

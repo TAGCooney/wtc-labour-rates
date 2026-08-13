@@ -1,8 +1,9 @@
 import { match } from "../router.js";
 import { json, error } from "../http.js";
 import { requireSession } from "./staff.js";
-import { blendAwardRate, applyOncostAndMargin, ONCOST_FLOOR_PCT, DEFAULT_MARGIN_PCT } from "../calc.js";
+import { blendAwardRate, applyOncostAndMargin } from "../calc.js";
 import { getRateCategories } from "../rates.js";
+import { getSettings } from "../settings.js";
 
 function quoteRow(row) {
   return { ...row, roster: JSON.parse(row.roster_json), isCasual: !!row.is_casual };
@@ -85,8 +86,9 @@ async function computeQuote(request, env) {
   if (!body.basePayRateId || !body.awardCode) return error("basePayRateId and awardCode required");
   if (!Array.isArray(body.roster) || !body.roster.length) return error("roster required");
 
-  const oncostPct = body.oncostPct != null ? Number(body.oncostPct) : 22.7;
-  const marginPct = body.marginPct != null ? Number(body.marginPct) : DEFAULT_MARGIN_PCT;
+  const settings = await getSettings(env);
+  const oncostPct = body.oncostPct != null ? Number(body.oncostPct) : settings.oncostFloorPct;
+  const marginPct = body.marginPct != null ? Number(body.marginPct) : settings.defaultMarginPct;
 
   const { rows: rateRows, hasCasualTable, usedFallbackLoading } = await getRateCategories(env, body.basePayRateId, {
     wantCasual: !!body.isCasual,
@@ -103,7 +105,7 @@ async function computeQuote(request, env) {
 
   let costAndCharge;
   try {
-    costAndCharge = applyOncostAndMargin(blended.blendedAwardRate, oncostPct, marginPct);
+    costAndCharge = applyOncostAndMargin(blended.blendedAwardRate, oncostPct, marginPct, settings.oncostFloorPct);
   } catch (e) {
     return error(e.message, 400);
   }
@@ -119,7 +121,7 @@ async function computeQuote(request, env) {
     marginPct,
     costRate: costAndCharge.costRate,
     chargeRate: costAndCharge.chargeRate,
-    oncostFloorPct: ONCOST_FLOOR_PCT,
+    oncostFloorPct: settings.oncostFloorPct,
     hasCasualTable,
     usedFallbackLoading,
     casualRateSource,
