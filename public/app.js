@@ -227,9 +227,19 @@ function renderRoster(priorHours) {
   const section = $("rosterSection");
   $("casualLoadingPct").disabled = !($("isCasual").checked && RATE_INFO.usedFallbackLoading);
 
-  let note = "";
+let note = `<div class="notice warn">
+    <strong>This tool does not work out ordinary vs overtime hours for you.</strong>
+    Which hours count as "ordinary" depends on the specific rostering arrangement the award allows
+    (e.g. a 4×9.5hr week vs 5×7.6hr week can have different daily/weekly caps) — it's not a fixed
+    number, and it's not something we can safely guess from a start/end time alone. Work out the
+    ordinary/overtime split from the award's own hours-of-work and overtime clauses (or ask before
+    quoting if unsure), then enter the hours against the matching category below.<br>
+    Working very early or very late does <em>not</em> automatically mean overtime in most awards —
+    that's usually a separate penalty, shown under "Allowances" below if this award has one.
+    ${SELECTED_AWARD.source_url ? `<a href="${SELECTED_AWARD.source_url}" target="_blank">Open the full award text ↗</a>` : ""}
+  </div>`;
   if ($("isCasual").checked) {
-    note = RATE_INFO.hasCasualTable
+    note += RATE_INFO.hasCasualTable
       ? `<div class="notice">Using this award's own official casual pay table — rates below already include whatever casual arrangement the award defines.</div>`
       : `<div class="notice warn">This award/classification has no distinct casual pay table in the source data — applying the casual loading % above as a flat markup on the permanent rates instead. Confirm against the award if unsure.</div>`;
   }
