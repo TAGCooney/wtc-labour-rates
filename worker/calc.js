@@ -4,26 +4,35 @@
 export const ONCOST_FLOOR_PCT = 22.7;
 export const DEFAULT_MARGIN_PCT = 15;
 
+const isOvertimeClause = (clauseDescription) => /overtime/i.test(clauseDescription || "");
+
 // roster: [{ penaltyDescription, hours }], rateRows: penalty_rates rows for the
 // chosen classification + casual/permanent split (from GET .../categories),
-// each with { penalty_description, calculated_value }. Any casual loading is
-// already baked into calculated_value by that endpoint -- this function never
-// applies a loading itself, so it can't be double-applied.
+// each with { penalty_description, clause_description, calculated_value }. Any
+// casual loading is already baked into calculated_value by that endpoint --
+// this function never applies a loading itself, so it can't be double-applied.
 export function blendAwardRate(roster, rateRows) {
-  const rateByCategory = new Map(rateRows.map((r) => [r.penalty_description, r.calculated_value]));
+  const rowByCategory = new Map(rateRows.map((r) => [r.penalty_description, r]));
   let totalPay = 0;
   let totalHours = 0;
   const lines = [];
   for (const line of roster) {
     const hours = Number(line.hours) || 0;
     if (hours <= 0) continue;
-    const rate = rateByCategory.get(line.penaltyDescription);
-    if (rate == null) {
+    const row = rowByCategory.get(line.penaltyDescription);
+    if (row == null) {
       throw new Error(`No rate found for category "${line.penaltyDescription}" on this classification`);
     }
+    const rate = row.calculated_value;
     totalPay += rate * hours;
     totalHours += hours;
-    lines.push({ penaltyDescription: line.penaltyDescription, hours, loadedRate: rate, lineTotal: rate * hours });
+    lines.push({
+      penaltyDescription: line.penaltyDescription,
+      hours,
+      loadedRate: rate,
+      lineTotal: rate * hours,
+      isOvertime: isOvertimeClause(row.clause_description),
+    });
   }
   if (totalHours <= 0) throw new Error("Roster has no hours entered");
   return { lines, totalHours, totalPay, blendedAwardRate: totalPay / totalHours };

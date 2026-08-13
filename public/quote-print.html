@@ -23,6 +23,7 @@
   .totals .box .label { font-size: 0.75rem; color: #666; display: block; }
   .totals .box .value { font-size: 1.3rem; font-weight: 800; }
   .charge { color: var(--pink); }
+  .ot-badge { display: inline-block; font-size: 0.65rem; font-weight: 800; color: #b8860b; border: 1px solid #b8860b; border-radius: 100px; padding: 1px 6px; vertical-align: middle; }
   footer { margin-top: 30px; font-size: 0.75rem; color: #777; border-top: 1px solid #ddd; padding-top: 10px; }
   .no-print { margin-bottom: 20px; }
   @media print { .no-print { display: none; } }
@@ -76,14 +77,15 @@
       <table>
         <thead><tr><th>Pay category</th><th class="num">Hours</th><th class="num">Rate ($/hr)</th><th class="num">Line total</th></tr></thead>
         <tbody>
-          ${q.roster.map((l) => `<tr><td>${l.penaltyDescription}</td><td class="num">${l.hours}</td><td class="num">${money(l.loadedRate)}</td><td class="num">${money(l.lineTotal)}</td></tr>`).join("")}
+          ${q.roster.map((l) => `<tr><td>${l.penaltyDescription}${l.isOvertime ? ' <span class="ot-badge">OT</span>' : ""}</td><td class="num">${l.hours}</td><td class="num">${money(l.loadedRate)}</td><td class="num">${money(l.lineTotal)}</td></tr>`).join("")}
         </tbody>
       </table>
       <div class="totals">
         <div class="box"><span class="label">Blended award rate</span><span class="value">${money(q.blended_award_rate)}/hr</span></div>
         <div class="box"><span class="label">Cost rate (+${q.oncost_pct}% on-costs)</span><span class="value">${money(q.cost_rate)}/hr</span></div>
-        <div class="box"><span class="label">Charge rate (+${q.margin_pct}% margin)</span><span class="value charge">${money(q.charge_rate)}/hr</span></div>
+        <div class="box"><span class="label">Charge rate (+${q.margin_pct}% margin) — excl. GST</span><span class="value charge">${money(q.charge_rate)}/hr</span></div>
       </div>
+      <p class="small" style="color:#666">All rates above are exclusive of GST. GST (if applicable) is charged in addition on invoicing.</p>
       ${q.notes ? `<p><strong>Notes:</strong> ${q.notes}</p>` : ""}
     `;
   });

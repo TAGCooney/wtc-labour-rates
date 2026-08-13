@@ -9,6 +9,8 @@ let LAST_BREAKDOWN = null;
 
 const $ = (id) => document.getElementById(id);
 const money = (n) => `$${Number(n).toFixed(2)}`;
+const isOvertimeClause = (clauseDescription) => /overtime/i.test(clauseDescription || "");
+const otBadge = (isOvertime) => (isOvertime ? '<span class="pill" style="color:var(--amber);border-color:var(--amber);margin-left:6px">OT</span>' : "");
 
 async function api(path, opts) {
   const res = await fetch(path, {
@@ -204,13 +206,13 @@ function renderRoster(priorHours) {
   }
   section.innerHTML = `
     ${note}
-    <label class="mt-8">Roster — enter hours worked in each applicable pay category</label>
+    <label class="mt-8">Roster — enter hours worked in each applicable pay category. <span class="pill" style="color:var(--amber);border-color:var(--amber)">OT</span> marks overtime-rate categories.</label>
     <table>
       <thead><tr><th>Category</th><th>Clause</th><th class="num">Rate ($/hr)</th><th class="num" style="width:110px">Hours</th></tr></thead>
       <tbody>
         ${RATE_CATEGORIES.map(
           (r, i) => `<tr>
-            <td>${r.penalty_description}</td>
+            <td>${r.penalty_description}${otBadge(isOvertimeClause(r.clause_description))}</td>
             <td class="muted small">${r.clauses || r.clause_description || ""}</td>
             <td class="num">${money(r.calculated_value)}</td>
             <td class="num"><input type="number" min="0" step="0.25" class="roster-hours" data-idx="${i}" value="${priorHours[r.penalty_description] || ""}" style="text-align:right"></td>
@@ -264,13 +266,13 @@ function renderBreakdown(b) {
     <table>
       <thead><tr><th>Category</th><th class="num">Hours</th><th class="num">Rate ($/hr)</th><th class="num">Line total</th></tr></thead>
       <tbody>
-        ${b.lines.map((l) => `<tr><td>${l.penaltyDescription}</td><td class="num">${l.hours}</td><td class="num">${money(l.loadedRate)}</td><td class="num">${money(l.lineTotal)}</td></tr>`).join("")}
+        ${b.lines.map((l) => `<tr><td>${l.penaltyDescription}${otBadge(l.isOvertime)}</td><td class="num">${l.hours}</td><td class="num">${money(l.loadedRate)}</td><td class="num">${money(l.lineTotal)}</td></tr>`).join("")}
       </tbody>
     </table>
     <div class="row mt-8" style="gap:24px">
       <div class="breakdown-total"><span class="label">Blended award rate</span>${money(b.blendedAwardRate)}/hr</div>
       <div class="breakdown-total"><span class="label">Cost rate (+ ${b.oncostPct}% on-costs)</span>${money(b.costRate)}/hr</div>
-      <div class="breakdown-total"><span class="label">Charge rate (+ ${b.marginPct}% margin)</span>${money(b.chargeRate)}/hr</div>
+      <div class="breakdown-total"><span class="label">Charge rate excl. GST (+ ${b.marginPct}% margin)</span>${money(b.chargeRate)}/hr</div>
     </div>
     <div class="small muted mt-8">Total rostered hours: ${b.totalHours} — total award pay: ${money(b.totalPay)}</div>
     <div class="small muted mt-8">Casual rate source: ${
@@ -319,7 +321,7 @@ async function loadHistory() {
   const quotes = await api("/api/staff/quotes");
   $("history").innerHTML = quotes.length
     ? `<table>
-        <thead><tr><th>Date</th><th>Client</th><th>Role</th><th>Award</th><th class="num">Charge rate</th><th>By</th><th></th></tr></thead>
+        <thead><tr><th>Date</th><th>Client</th><th>Role</th><th>Award</th><th class="num">Charge rate (excl. GST)</th><th>By</th><th></th></tr></thead>
         <tbody>
           ${quotes.map(
             (q) => `<tr>
@@ -342,7 +344,12 @@ async function loadAccounts() {
   $("accountsList").innerHTML = `<table>
     <thead><tr><th>Name</th><th>Email</th><th>Role</th><th></th></tr></thead>
     <tbody>
-      ${accounts.map((a) => `<tr><td>${a.name}</td><td>${a.email}</td><td>${a.role}</td><td>${a.mustChange ? '<span class="pill uncertain">pending first login</span>' : ""}</td></tr>`).join("")}
+      ${accounts.map(
+        (a) =>
+          `<tr><td>${a.name}</td><td>${a.email}</td><td>${a.role}</td><td>${
+            a.pendingInvite ? '<span class="pill uncertain">setup link pending</span>' : a.mustChange ? '<span class="pill uncertain">pending first login</span>' : ""
+          }</td></tr>`
+      ).join("")}
     </tbody>
   </table>`;
 }
@@ -354,7 +361,23 @@ async function addAccount() {
   if (!email || !name) return;
   try {
     const account = await api("/api/staff/accounts", { method: "POST", body: JSON.stringify({ email, name, role }) });
-    $("newAccountResult").innerHTML = `<div class="notice">Created ${account.name}. Temporary password (share securely, shown once): <strong>${account.tempPassword}</strong></div>`;
+    const subject = encodeURIComponent("Set up your WTC Labour Rates account");
+    const body = encodeURIComponent(
+      `Hi ${account.name},\n\nYou've been added to the WTC Labour Rates calculator. Click this link to set your password and sign in:\n\n${account.inviteLink}\n\nThis link expires in 7 days.`
+    );
+    const mailtoLink = `mailto:${account.email}?subject=${subject}&body=${body}`;
+    $("newAccountResult").innerHTML = `
+      <div class="notice">
+        Created ${account.name}. Setup link (expires in 7 days, shown once):<br>
+        <input type="text" readonly value="${account.inviteLink}" style="margin:6px 0" onclick="this.select()">
+        <div class="row" style="gap:8px; margin-top:4px">
+          <button type="button" id="copyInviteBtn">Copy link</button>
+          <a href="${mailtoLink}"><button type="button">Email via your mail client</button></a>
+        </div>
+      </div>`;
+    document.getElementById("copyInviteBtn").addEventListener("click", () => {
+      navigator.clipboard.writeText(account.inviteLink);
+    });
     $("newEmail").value = "";
     $("newName").value = "";
     loadAccounts();

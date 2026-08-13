@@ -1,9 +1,25 @@
 import { match } from "../router.js";
 import { json, error } from "../http.js";
-import { hashPassword, verifyPassword, makeCookie, clearCookie, readSession, requireRole } from "../auth.js";
+import {
+  hashPassword,
+  verifyPassword,
+  makeCookie,
+  clearCookie,
+  readSession,
+  requireRole,
+  createInviteToken,
+  hashInviteToken,
+} from "../auth.js";
 
 function staffRow(row) {
-  return { id: row.id, email: row.email, name: row.name, role: row.role, mustChange: !!row.must_change };
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    role: row.role,
+    mustChange: !!row.must_change,
+    pendingInvite: !!row.invite_token_hash,
+  };
 }
 
 export async function requireSession(request, env) {
@@ -40,6 +56,33 @@ export async function handleStaffAuth(request, env, url) {
     });
   }
 
+  // Account-setup invite link (unauthenticated -- the whole point is the new
+  // person doesn't have a session or password yet).
+  if (match("/api/staff/accept-invite", pathname) && method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    if (!body.token || !body.password) return error("token and password required");
+    if (body.password.length < 8) return error("Password must be at least 8 characters");
+    const tokenHash = await hashInviteToken(body.token);
+    const row = await env.DB.prepare(
+      "SELECT * FROM staff_users WHERE invite_token_hash = ? AND invite_expires_at > datetime('now')"
+    )
+      .bind(tokenHash)
+      .first();
+    if (!row) return error("This setup link is invalid or has expired -- ask an admin to send a new one", 404);
+    const { salt, hash, iter } = await hashPassword(body.password);
+    const updated = await env.DB.prepare(
+      `UPDATE staff_users SET pw_salt=?, pw_hash=?, pw_iter=?, must_change=0, invite_token_hash=NULL, invite_expires_at=NULL
+       WHERE id=? RETURNING *`
+    )
+      .bind(salt, hash, iter, row.id)
+      .first();
+    const cookie = await makeCookie(env, { id: updated.id, role: updated.role, exp: Date.now() + 12 * 3600 * 1000 });
+    return new Response(JSON.stringify(staffRow(updated)), {
+      status: 200,
+      headers: { "Content-Type": "application/json", "Set-Cookie": cookie },
+    });
+  }
+
   const staff = await requireSession(request, env);
   if (!staff) return error("Not authenticated", 401);
   const session = { id: staff.id, role: staff.role };
@@ -68,15 +111,17 @@ export async function handleStaffAuth(request, env, url) {
     const body = await request.json().catch(() => ({}));
     if (!body.email || !body.name || !body.role) return error("email, name, role required");
     if (!["admin", "staff"].includes(body.role)) return error("role must be admin or staff");
-    const tempPassword = crypto.randomUUID().slice(0, 12);
-    const { salt, hash, iter } = await hashPassword(tempPassword);
+    // Placeholder password nobody knows -- login stays impossible until the invite link is used.
+    const { salt, hash, iter } = await hashPassword(crypto.randomUUID());
+    const { token, hash: inviteHash, expiresAt } = await createInviteToken();
     const row = await env.DB.prepare(
-      `INSERT INTO staff_users (email, name, role, pw_salt, pw_hash, pw_iter, must_change)
-       VALUES (?, ?, ?, ?, ?, ?, 1) RETURNING *`
+      `INSERT INTO staff_users (email, name, role, pw_salt, pw_hash, pw_iter, must_change, invite_token_hash, invite_expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?) RETURNING *`
     )
-      .bind(body.email.trim().toLowerCase(), body.name, body.role, salt, hash, iter)
+      .bind(body.email.trim().toLowerCase(), body.name, body.role, salt, hash, iter, inviteHash, expiresAt)
       .first();
-    return json({ ...staffRow(row), tempPassword }, 201);
+    const inviteLink = `${url.origin}/setup.html?token=${token}`;
+    return json({ ...staffRow(row), inviteLink }, 201);
   }
 
   let m = match("/api/staff/accounts/:id", pathname);

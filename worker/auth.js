@@ -102,3 +102,25 @@ export function requireRole(session, roles) {
   if (!roles) return true;
   return roles.includes(session.role);
 }
+
+// Account-setup invite links: a random token the new user clicks to set their
+// own password, so no password (temp or real) ever has to travel through
+// email/chat. Only the SHA-256 hash is stored -- the plaintext token exists
+// only in the URL shown once to the admin.
+const INVITE_DAYS = 7;
+
+export async function createInviteToken() {
+  const bytes = crypto.getRandomValues(new Uint8Array(24));
+  const token = b64url(bytes);
+  const hashBuf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return {
+    token,
+    hash: b64url(hashBuf),
+    expiresAt: new Date(Date.now() + INVITE_DAYS * 24 * 3600 * 1000).toISOString(),
+  };
+}
+
+export async function hashInviteToken(token) {
+  const hashBuf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return b64url(hashBuf);
+}

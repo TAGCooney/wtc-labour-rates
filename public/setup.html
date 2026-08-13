@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set up your account — WTC Labour Rates</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-box">
+    <div class="brand"><span>WORK<span class="plus">+</span>TRAVEL</span><span class="co">CO.</span></div>
+    <div class="card">
+      <h2 class="mt-8" style="margin-bottom:16px">Set your password</h2>
+      <p class="small muted" id="intro">You've been invited to the labour rate calculator. Choose a password to finish setting up your account.</p>
+      <div id="err"></div>
+      <form id="setupForm">
+        <div class="field">
+          <label for="password">New password (min 8 characters)</label>
+          <input type="password" id="password" required autocomplete="new-password">
+        </div>
+        <button type="submit" class="primary" style="width:100%">Set password and sign in</button>
+      </form>
+    </div>
+  </div>
+</div>
+<script>
+  const token = new URLSearchParams(location.search).get("token");
+  const form = document.getElementById("setupForm");
+  const err = document.getElementById("err");
+  if (!token) {
+    document.getElementById("intro").textContent = "This setup link is missing its token — ask an admin for a fresh invite link.";
+    form.hidden = true;
+  }
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    err.innerHTML = "";
+    const password = document.getElementById("password").value;
+    const res = await fetch("/api/staff/accept-invite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, password }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      err.innerHTML = `<div class="notice error">${body.error || "Could not set up this account"}</div>`;
+      return;
+    }
+    location.href = "/app.html";
+  });
+</script>
+</body>
+</html>

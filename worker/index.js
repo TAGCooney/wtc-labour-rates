@@ -12,7 +12,8 @@ export default {
       pathname.startsWith("/api/staff/logout") ||
       pathname.startsWith("/api/staff/me") ||
       pathname.startsWith("/api/staff/password") ||
-      pathname.startsWith("/api/staff/accounts")
+      pathname.startsWith("/api/staff/accounts") ||
+      pathname.startsWith("/api/staff/accept-invite")
     ) {
       return handleStaffAuth(request, env, url);
     }
